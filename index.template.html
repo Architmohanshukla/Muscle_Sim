@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muscle Simulator</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div>
+    <h1>Muscle Simulator</h1>
+    <p class="sub">Four movements on one engine. Position drives joint angles, joint angles drive
+    external moments, external moments drive muscle demand &mdash; and muscle demand, muscle length
+    and joint compression are tracked as three separate things.</p>
+  </div>
+  <div class="subject" id="subjectLine"></div>
+</header>
+
+<div class="tabstrip" id="tabs"></div>
+
+<div class="layout">
+
+  <!-- ============ left: the cockpit, figure + controls ============ -->
+  <div class="cockpit">
+    <div class="card figure-card">
+      <h2><span id="figTitle">Squat</span> &middot; sagittal view
+        <span class="note">click a muscle to isolate it here</span></h2>
+      <div class="body">
+        <div id="figure"></div>
+        <div class="legend" style="padding:8px 8px 2px">
+          <span><i style="background:#2c6382"></i>fibres lengthened</span>
+          <span><i style="background:#5d7b52"></i>near optimal</span>
+          <span><i style="background:#a8442c"></i>fibres shortened</span>
+          <span><i style="background:#a09684"></i>slack</span>
+          <span style="color:var(--ink-3)">line thickness = muscle size &times; activation</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Position &amp; tempo</h2>
+      <div class="body controls">
+        <div class="row">
+          <span class="depth-readout" id="depthVal">100%</span>
+          <span class="depth-class" id="depthClass"></span>
+          <input type="range" id="depth" min="0" max="1000" value="1000" aria-label="Position through the movement">
+        </div>
+        <div class="scale" id="scale" aria-hidden="true"></div>
+        <div class="row" style="justify-content:space-between">
+          <span class="depth-label" id="depthCaption"></span>
+          <span class="phase-tag" id="phase">held still</span>
+        </div>
+        <div id="movControls"></div>
+        <div class="row">
+          <button id="play" class="primary">Play through the rep</button>
+          <div class="seg">
+            <button id="modeStatic" aria-pressed="true">Quasi-static</button>
+            <button id="modeDyn" aria-pressed="false">With inertia</button>
+          </div>
+          <span class="depth-label" id="clock" style="margin-left:auto"></span>
+        </div>
+        <div class="row">
+          <span class="depth-label" style="min-width:8.5em">tempo down/hold/up</span>
+          <input type="range" id="tempo" min="40" max="220" value="100" aria-label="Tempo scale">
+          <span class="n" style="font-family:var(--mono);font-size:12px;min-width:8em;text-align:right" id="tempoVal"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ right: what is actually happening ============ -->
+  <div>
+
+    <div class="card flush">
+      <h2>Engaged muscles
+        <span class="note" style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="seg">
+            <button id="sortRegion" aria-pressed="true">by region</button>
+            <button id="sortAct" aria-pressed="false">most active</button>
+          </span>
+        </span>
+      </h2>
+      <div id="map"></div>
+    </div>
+
+    <div class="card flush">
+      <h2>Selected muscle <span class="note">click a chip above</span></h2>
+      <div id="detail"></div>
+    </div>
+
+    <div class="card">
+      <h2>What this position actually does</h2>
+      <div class="body prose" id="headline"></div>
+    </div>
+
+    <div class="card flush">
+      <h2>Posture</h2>
+      <div id="angles"></div>
+    </div>
+
+    <div class="card flush">
+      <h2>Required joint moments <span class="note">per side &middot; negative = extensor demand</span></h2>
+      <div id="moments"></div>
+    </div>
+
+    <details class="panel">
+      <summary>Full muscle table <span class="note">every column, every muscle</span></summary>
+      <div id="muscles"></div>
+    </details>
+
+    <details class="panel" open>
+      <summary>Tendons &amp; joints <span class="note">consequences, not actuators</span></summary>
+      <div id="structures"></div>
+    </details>
+
+    <div class="card">
+      <h2>Export <span class="note">solved values, not a screenshot</span></h2>
+      <div class="body controls">
+        <div class="row">
+          <span class="depth-label" style="min-width:8.6em">what</span>
+          <div class="seg">
+            <button id="expThis" aria-pressed="true">This movement</button>
+            <button id="expAll" aria-pressed="false">All four</button>
+          </div>
+        </div>
+        <div class="row">
+          <span class="depth-label" style="min-width:8.6em">positions</span>
+          <div class="seg">
+            <button class="expSteps" data-n="21" aria-pressed="false">21</button>
+            <button class="expSteps" data-n="51" aria-pressed="true">51</button>
+            <button class="expSteps" data-n="101" aria-pressed="false">101</button>
+          </div>
+          <label class="depth-label" style="display:flex;align-items:center;gap:6px;margin-left:auto">
+            <input type="checkbox" id="expTimeline"> include timed rep
+          </label>
+        </div>
+        <div class="row">
+          <button id="expXlsx" class="primary">Download .xlsx</button>
+          <button id="expCsv">Download .csv</button>
+          <span class="depth-label" id="expStatus" style="margin-left:auto"></span>
+        </div>
+        <p class="prose" style="margin:2px 0 0;font-size:12.5px;color:var(--ink-3)">
+          The workbook sweeps the whole position range and writes one row per position, limb and
+          muscle &mdash; activation, both length measures, tendon strain and force, side by side
+          so they pivot directly. Separate sheets carry joint angles and moments, tendon and joint
+          loads, and the muscle architecture table. The CSV is the muscle sheet on its own.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>How to read this</h2>
+      <div class="body prose">
+        <p><b>Activation</b> is how hard the nervous system is driving the muscle, chosen by
+        minimising total squared activation subject to every joint moment being met exactly.</p>
+        <p><b>Fibre length</b> is where the contractile fibres sit relative to their optimal
+        length, solved from fibre&ndash;tendon force equilibrium. <b>MTU</b> is the whole
+        muscle&ndash;tendon unit's length change, which is pure geometry. These two disagree on
+        purpose: the quadriceps unit lengthens about 30&nbsp;% into a full squat while its fibres
+        lengthen far less, because the tendon and aponeurosis take the rest.</p>
+        <p><b>Tension</b> splits into <span style="color:var(--active)">active</span> and
+        <span style="color:var(--passive)">passive</span>. Passive tension needs no activation at
+        all &mdash; it is the price of being stretched.</p>
+        <p>None of these is joint compression. A joint is compressed by the muscles crossing it
+        <em>plus</em> the bone-on-bone force, which is why the patellofemoral joint is squeezed
+        hardest exactly where the quadriceps has the least leverage.</p>
+        <p><b>Every movement runs on the same engine.</b> The squat and split squat are lower-body
+        chains; the curl and push-up add a fully articulated upper limb. The split squat is the only
+        one solved as two independent limbs, because its two legs genuinely do different jobs.</p>
+        <p><b>Depth is named by the hip, not the knee.</b> With the shank inclined ~35&deg;, a
+        horizontal thigh needs about 125&deg; of knee flexion &mdash; so &ldquo;90 degrees&rdquo;
+        is a half squat with the hip still 22&nbsp;cm above the knee, not parallel. Drag to 100&nbsp;%
+        for a true full squat: hip 22&nbsp;cm <em>below</em> the knee.</p>
+        <p><b>Knee loading peaks at parallel, not at the bottom.</b> Patellofemoral compression
+        rises to 3.6&nbsp;&times;&nbsp;body weight around parallel and then <em>falls</em> to about
+        2&nbsp;&times;&nbsp;BW at full depth, because the back of the thigh wedges against the calf
+        and takes over part of the knee extension demand. Watch the numbers as you pass 130&deg;.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Model detail</h2>
+      <div class="body prose" id="modelDetail"></div>
+      <div class="body" style="padding-top:0">
+        <details class="foot">
+          <summary>How each stage is computed</summary>
+          <div class="prose">
+            <p><b>Posture.</b> Each movement solves its own. In the <em>squat</em>, knee flexion
+            is the driver and ankle dorsiflexion is solved so the COM sits over the centre of
+            pressure, making trunk lean and required ankle range predictions rather than inputs.
+            In the <em>split squat</em>, both feet are planted, so stance length caps how high the
+            hips can be and the front knee angle is solved from how far the rear leg has folded.
+            In the <em>curl</em>, the arm hangs under gravity and trunk lean is solved from balance
+            &mdash; which is why the model leans back under a heavy dumbbell. In the
+            <em>push-up</em>, elbow flexion sets the shoulder-to-wrist distance while the shoulder
+            must stay a fixed distance from the toe contact: two circles, one intersection.
+            Segment masses and inertias are de&nbsp;Leva (1996).</p>
+            <p><b>Open vs closed chains.</b> The squat and curl are grounded at one end, so
+            virtual power handles them directly. The split squat and push-up have two ground
+            contacts. The push-up is still determinate &mdash; the plank is rigid, so moments
+            about the toes fix the hand reaction. The split squat is genuinely indeterminate: how
+            much weight goes through each foot is the lifter&rsquo;s choice, so it is a prescribed,
+            measured quantity exposed as a control. Its per-leg joint moments then come from
+            standard bottom-up inverse dynamics, which is verified against the squat&rsquo;s
+            virtual-power result to 0.002&nbsp;N&middot;m.</p>
+            <p><b>Moments.</b> The planar chain is parameterised by exactly the joint angles we
+            want moments about, so d'Alembert's principle gives each joint moment directly as
+            &Sigma;&nbsp;m(a&nbsp;&minus;&nbsp;g)&middot;&part;r/&part;q, with Jacobians taken by
+            central differences on the forward kinematics. In <em>With inertia</em> mode the
+            segment accelerations come from the actual trajectory.</p>
+            <p><b>Muscle geometry.</b> All 55 muscles &mdash; 28 lower limb, 27 upper &mdash;
+            carry a measured moment arm r(&theta;) about
+            every degree of freedom they cross, and length follows by virtual work,
+            L&nbsp;=&nbsp;L<sub>ref</sub>&nbsp;&minus;&nbsp;&int;r&nbsp;d&theta;. Length and
+            leverage therefore cannot contradict each other.</p>
+            <p><b>Muscle model.</b> Hill-type with an elastic tendon: Gaussian active
+            force&ndash;length, exponential passive force&ndash;length, Hill force&ndash;velocity,
+            variable pennation, and a fibre&ndash;tendon equilibrium solved per muscle per frame.</p>
+            <p><b>Recruitment.</b> Because force is linear in activation at a fixed fibre state,
+            each frame is a bound-constrained quadratic program, solved exactly by an active-set
+            method, wrapped in a fixed-point loop over tendon equilibrium. Constraint residuals are
+            printed above and are normally below 0.01&nbsp;N&middot;m.</p>
+          </div>
+        </details>
+        <details class="foot">
+          <summary>Limitations &mdash; read before trusting a number</summary>
+          <div class="prose">
+            <ul>
+              <li><b>Not OpenSim.</b> This is planar, bilaterally symmetric, and uses moment-arm
+              splines instead of three-dimensional muscle paths and wrapping surfaces. Treat it as
+              a teaching instrument, not a subject-specific analysis.</li>
+              <li><b>Synergist splits are unreliable; group totals are better.</b> Minimising
+              squared activation is winner-take-most between muscles that do the same job. The
+              model gives hip extension almost entirely to gluteus maximus and near-zero to
+              adductor magnus, whereas EMG shows both working. Read <em>hip extensors</em> as a
+              group, not the individual split.</li>
+              <li><b>Out-of-plane demands are estimates.</b> Hip ab/adduction, hip rotation and
+              ankle inversion moments are first-order estimates from stance geometry, not measured
+              data; muscles acting mainly about them are tagged in the table. The deep hip
+              external rotators are outside the requested muscle set, so hip rotation demand is
+              deliberately kept conservative.</li>
+              <li><b>Stabiliser activation is partly imposed.</b> Pure effort minimisation silences
+              every stabiliser, so frontal/transverse muscles and the abdominal wall carry a
+              co-activation floor scaled to joint demand. Rows sitting on it are tagged
+              <span class="tag">floor</span> and are not predictions.</li>
+              <li><b>Passive properties are calibrated, not measured.</b> Passive fibre strain was
+              set per muscle group so the model's passive joint moments match measured end-range
+              values (knee 10&ndash;20, hip 15&ndash;35, ankle 10&ndash;20&nbsp;N&middot;m).
+              Passive ligament and disc contributions to lumbar resistance are not modelled, so
+              lumbar passive moment reads low.</li>
+              <li><b>Thigh-calf contact is a modelled estimate.</b> Past ~130&deg; of knee
+              flexion the posterior soft tissues wedge together and offload the knee extensors.
+              It is represented as a quadratic contact spring calibrated to a contact force of
+              ~0.4&nbsp;&times;&nbsp;body weight at full depth, which is inside the reported range,
+              but it is not measured for this subject &mdash; and it depends strongly on how bulky
+              the thigh and calf are. It is reported as its own row so you can see its size.</li>
+              <li><b>Bottom-position activations are a lower bound.</b> Effort minimisation is
+              happy to rest the body on passive tissue and thigh-calf contact, so the model shows
+              very low quadriceps and glute activity at the very bottom. That is real for a relaxed
+              resting squat, but a controlled rep carries more activation than this at the bottom.
+              The ascent figures are the more representative ones.</li>
+              <li><b>Joint contact forces are estimates.</b> Patellofemoral force uses the standard
+              published F&nbsp;=&nbsp;F<sub>quad</sub>&nbsp;&middot;&nbsp;k(&theta;) relation, which
+              is well supported. Tibiofemoral, hip and disc loads resolve muscle forces onto bone
+              axes with documented approximations rather than true anatomy.</li>
+              <li><b>The shoulder is not a planar joint.</b> Elbow and shoulder flexion are
+              well posed here. The rotator cuff and scapular muscles act about rotation and
+              scapular degrees of freedom whose demands in these movements are first-order
+              estimates, and the scapula has no independent kinematics &mdash; it is driven from
+              the humerus by a fixed scapulohumeral rhythm. Read those rows as "this group is
+              working", not as a reliable split between individual muscles.</li>
+              <li><b>Forearm rotation is not constrained in the curl.</b> A dumbbell held at its
+              centre applies no twist, and whatever net twist the muscles produce is taken by the
+              radioulnar end stop and the grip. The grip&rsquo;s real effect &mdash; the biceps
+              losing about a third of its elbow leverage when pronated, and changing length &mdash;
+              is modelled.</li>
+              <li><b>One subject.</b> 75&nbsp;kg, 1.75&nbsp;m. Anthropometry and joint range limits
+              are constants in the configuration block, not controls.</li>
+            </ul>
+          </div>
+        </details>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>/*__JS__*/</script>
+<script>
+document.getElementById('subjectLine').innerHTML =
+  SUBJECT.mass.toFixed(0) + ' kg &middot; ' + SUBJECT.height.toFixed(2) + ' m<br>' +
+  'unloaded subject' +
+  '<br>' + (MUSCLES.length + MUSCLES_UPPER.length) + ' muscles &middot; ' +
+  DOFS.length + ' DOF &middot; 4 movements';
+</script>
+<script>/*__APP__*/</script>
+</body>
+</html>
